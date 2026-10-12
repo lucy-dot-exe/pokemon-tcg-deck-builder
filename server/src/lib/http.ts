@@ -33,8 +33,9 @@ export async function handle(request: Request, run: () => Promise<Response>): Pr
   } catch (error) {
     if (request.signal.aborted) return new Response(null, { status: 499 });
     if (error instanceof UpstreamError) {
-      // A missing card is a 404 for the caller too; anything else upstream is a bad gateway.
-      return json(request, { error: error.message }, error.status === 404 ? 404 : 502);
+      // A missing card is a 404 for the caller too, and a timeout a 504; anything else upstream is a bad gateway.
+      const status = error.status === 404 || error.status === 504 ? error.status : 502;
+      return json(request, { error: error.message }, status);
     }
     console.error(error);
     return json(request, { error: 'Internal server error' }, 500);

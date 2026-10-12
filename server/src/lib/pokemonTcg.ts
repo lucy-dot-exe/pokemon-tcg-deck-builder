@@ -9,9 +9,15 @@ const BASE_URL = 'https://api.pokemontcg.io/v2';
 // well under the service's MemoryMax (a 100-card search page is a few hundred KB).
 const cache = new TtlCache<unknown>({ ttlMs: 6 * 60 * 60 * 1000, maxEntries: 200 });
 
-// pokemontcg.io intermittently answers identical queries with a 500/502, so server errors are retried after these
-// delays before giving up.
+// pokemontcg.io intermittently answers identical queries with a 500/502, or hangs, so server errors, network errors
+// and timeouts are retried after these delays before giving up.
 const RETRY_DELAYS_MS = [300, 1000];
+// Each attempt gets up to ATTEMPT_TIMEOUT_MS, and all attempts together TOTAL_BUDGET_MS. The budget stays under
+// nginx's 60s proxy_read_timeout (deploy/nginx-location.conf), so callers get our 504 rather than nginx's.
+const ATTEMPT_TIMEOUT_MS = 20_000;
+const TOTAL_BUDGET_MS = 50_000;
+// A retry isn't started with less time than this left; it would only time out.
+const MIN_ATTEMPT_MS = 5_000;
 
 export class UpstreamError extends Error {
   constructor(readonly status: number, statusText: string) {
@@ -25,17 +31,38 @@ async function upstream<T>(path: string, signal?: AbortSignal): Promise<T> {
 
   const headers: HeadersInit = {};
   if (process.env.POKEMON_TCG_API_KEY) headers['X-Api-Key'] = process.env.POKEMON_TCG_API_KEY;
-  let response = await fetch(`${BASE_URL}${path}`, { headers, signal, cache: 'no-store' });
-  for (const delayMs of RETRY_DELAYS_MS) {
-    if (response.status < 500) break;
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+
+  for (let attempt = 0; ; attempt++) {
+    const timeoutMs = Math.min(ATTEMPT_TIMEOUT_MS, deadline - Date.now());
+    const attemptSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
+    let failure: UpstreamError;
+    try {
+      const response = await fetch(`${BASE_URL}${path}`, { headers, signal: attemptSignal, cache: 'no-store' });
+      if (response.ok) {
+        const body = (await response.json()) as T;
+        cache.set(path, body);
+        return body;
+      }
+      failure = new UpstreamError(response.status, response.statusText);
+      if (response.status < 500) throw failure;
+    } catch (error) {
+      // The caller went away, or a 4xx: retrying won't help.
+      if (signal?.aborted || error instanceof UpstreamError) throw error;
+      const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+      if (!timedOut && !(error instanceof TypeError)) throw error;
+      failure = timedOut
+        ? new UpstreamError(504, `timed out after ${Math.round(timeoutMs / 1000)}s`)
+        : new UpstreamError(502, error.message);
+    }
+
+    const delayMs = RETRY_DELAYS_MS[attempt];
+    if (delayMs === undefined || Date.now() + delayMs + MIN_ATTEMPT_MS > deadline) throw failure;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     signal?.throwIfAborted();
-    response = await fetch(`${BASE_URL}${path}`, { headers, signal, cache: 'no-store' });
   }
-  if (!response.ok) throw new UpstreamError(response.status, response.statusText);
-  const body = (await response.json()) as T;
-  cache.set(path, body);
-  return body;
 }
 
 /** What a set code (SVI) or card number (196, TG01) looks like; anything else would be query syntax. */

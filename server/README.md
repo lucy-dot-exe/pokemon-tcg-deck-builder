@@ -9,7 +9,8 @@ It's a Next.js (App Router) app with route handlers only, following the stack in
 ## Endpoints
 
 All responses are JSON. Errors come back as `{ "error": "..." }` with status 400 (bad parameters), 404 (no such
-card) or 502 (pokemontcg.io failed even after retries).
+card), 502 (pokemontcg.io failed even after retries) or 504 (pokemontcg.io didn't answer within 50s, counting
+retries; each attempt gets up to 20s).
 
 | Endpoint | Returns |
 | --- | --- |
