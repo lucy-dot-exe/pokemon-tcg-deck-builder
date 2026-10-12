@@ -1,0 +1,19 @@
+# systemd unit for the droplet. Installed to /etc/systemd/system/ (see README, "Deployment").
+[Unit]
+Description=pokemon-tcg-deck-builder API (projects.lucina.dev/pokemon-tcg-deck-builder/api)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pokemontcg
+WorkingDirectory=/srv/pokemon-tcg-deck-builder
+# POKEMON_TCG_API_KEY (optional), ALLOWED_ORIGINS (optional), NODE_ENV=production, PORT=3003, HOSTNAME=127.0.0.1
+EnvironmentFile=/etc/pokemon-tcg-deck-builder/pokemon-tcg-deck-builder.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

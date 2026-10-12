@@ -6,27 +6,10 @@ import { isBasicEnergy } from './cards'
  * rotation (it still marks pre-rotation regulation marks as standard-legal).
  * Regulation marks are stamped on the print and don't change, so Standard is
  * computed from them directly instead of trusting that field. Update this
- * when the format rotates.
+ * when the format rotates, together with STANDARD_MIN_REGULATION_MARK in
+ * server/src/lib/rules.ts (which filters searches by it).
  */
 export const CURRENT_STANDARD_MIN_REGULATION_MARK = 'H'
-
-/**
- * Every regulation mark letter from the current cutoff through 'Z' — used to
- * build an API-side filter (the API only supports exact-match/OR queries,
- * not a >= comparison, so this generates the equivalent explicit list).
- * Marks beyond what's been printed yet just match 0 cards, harmlessly.
- */
-export function standardRegulationMarks(): string[] {
-  const marks: string[] = []
-  for (
-    let code = CURRENT_STANDARD_MIN_REGULATION_MARK.charCodeAt(0);
-    code <= 'Z'.charCodeAt(0);
-    code++
-  ) {
-    marks.push(String.fromCharCode(code))
-  }
-  return marks
-}
 
 function isFairyEnergy(card: Card): boolean {
   return card.supertype === 'Energy' && card.name.startsWith('Fairy Energy')

@@ -4,8 +4,8 @@ import type { Card } from '../types/card'
  * The 8 basic energy types, hardcoded as the canonical Scarlet & Violet
  * Energies print (numbers 1-8, real data captured from the API). Basic
  * Energy never changes — no new rules text, no rotation — so there's no
- * need to fetch or search for it; the API is asked to exclude it entirely
- * (see api/pokemonTcg.ts) and these constants are shown instead whenever a
+ * need to fetch or search for it; the API service excludes it from searches
+ * (see BASIC_ENERGY_NAMES in server/src/lib/rules.ts) and these constants are shown instead whenever a
  * search matches one.
  */
 const SVE_SET = {
@@ -53,9 +53,3 @@ export const CANONICAL_BASIC_ENERGIES: Card[] = [
   sveEnergy(7, 'Darkness'),
   sveEnergy(8, 'Metal'),
 ]
-
-/** Every literal name a basic energy card might use across print eras (modern "Basic X Energy" and vintage "X Energy"). */
-export const BASIC_ENERGY_NAMES: string[] = CANONICAL_BASIC_ENERGIES.flatMap((card) => [
-  card.name,
-  card.name.replace(/^Basic /, ''),
-])

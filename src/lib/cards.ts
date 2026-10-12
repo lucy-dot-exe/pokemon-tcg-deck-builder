@@ -84,8 +84,8 @@ export function dedupeByFunctionalText(cards: Card[]): Card[] {
 /**
  * The canonical basic energies (Scarlet & Violet Energies, numbers 1-8)
  * whose name matches a search query — or all 8, when browsing the Energy
- * type with no query text yet. The API is never asked for Basic Energy (see
- * api/pokemonTcg.ts) since it's fixed, known data — this is the client-side
+ * type with no query text yet. The API never returns Basic Energy (see
+ * server/src/lib/rules.ts) since it's fixed, known data — this is the client-side
  * substitute, used to merge matching basics into search results.
  */
 export function matchingBasicEnergies(query: string, supertype?: Supertype): Card[] {

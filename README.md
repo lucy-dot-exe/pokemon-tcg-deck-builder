@@ -3,9 +3,13 @@
 A browser-based tool for building Pokémon Trading Card Game decks. Search
 for cards using the [Pokemon TCG API](https://pokemontcg.io/), assemble a
 60-card deck, and check it against Standard-format deck-building rules,
-opening-hand odds, and card-to-card synergies — all without a backend.
+opening-hand odds, and card-to-card synergies.
 
-Live at: https://lucy-dot-exe.github.io/pokemon-tcg-deck-builder/
+The pages are a static site. Card data comes through a small API service in
+[`server/`](server/), which proxies and caches the Pokemon TCG API.
+
+Live at: https://lucy-dot-exe.github.io/pokemon-tcg-deck-builder/ (API:
+https://projects.lucina.dev/pokemon-tcg-deck-builder/api)
 
 ## Features
 
@@ -54,16 +58,28 @@ ambiguous rather than guessed at).
 ## Stack
 
 - [Vite](https://vite.dev/) + React + TypeScript
-- [Pokemon TCG API](https://docs.pokemontcg.io/) for card data (no API key required for this usage)
+- [Pokemon TCG API](https://docs.pokemontcg.io/) for card data, reached through the API service in
+  [`server/`](server/) (Next.js route handlers on the shared droplet)
 - [d3-force](https://github.com/d3/d3-force) for the interaction graph layout
 - Deck state persisted to `localStorage`
 - Deployed to GitHub Pages via GitHub Actions
 
 ## Development
 
+The pages need the API service running alongside them:
+
 ```bash
 npm install
-npm run dev
+npm run dev                          # pages, http://localhost:5173/pokemon-tcg-deck-builder/
+
+cd server && npm install && npm run dev   # API, http://localhost:3003/api
+```
+
+To use a different API, for example the deployed one, set `VITE_API_BASE_URL` in a
+gitignored `.env.local`:
+
+```
+VITE_API_BASE_URL=https://projects.lucina.dev/pokemon-tcg-deck-builder/api
 ```
 
 ## Lint
@@ -79,6 +95,9 @@ npm run build
 ```
 
 ## Deployment
+
+The API service is deployed to the droplet separately. See
+[server/README.md](server/README.md#deployment).
 
 Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds the
 app and publishes it to GitHub Pages. In the repo settings, set **Pages →
