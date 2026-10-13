@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { describeCondition, type CardCondition, type CardInteractionRule } from '../lib/cardInteractions'
+import { describeCondition, type CardCondition, type CardInteractionRule, type RuleKind } from '../lib/cardInteractions'
 
 const STORAGE_KEY = 'pokemon-tcg-deck-builder:custom-interaction-rules'
 
@@ -8,6 +8,7 @@ export interface StoredCardInteractionRule {
   triggerCardName: string
   description: string
   condition: CardCondition
+  kind?: RuleKind
 }
 
 function loadRules(): StoredCardInteractionRule[] {
@@ -24,6 +25,7 @@ export interface NewCardInteractionRule {
   triggerCardName: string
   condition: CardCondition
   description?: string
+  kind?: RuleKind
 }
 
 export interface UseCardInteractionRulesResult {
@@ -40,13 +42,14 @@ export function useCardInteractionRules(): UseCardInteractionRulesResult {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
   }, [rules])
 
-  const addRule = useCallback(({ triggerCardName, condition, description }: NewCardInteractionRule) => {
+  const addRule = useCallback(({ triggerCardName, condition, description, kind }: NewCardInteractionRule) => {
     setRules((prev) => [
       ...prev,
       {
         id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         triggerCardName,
         condition,
+        kind,
         description: description?.trim() || `Interacts with ${describeCondition(condition)}.`,
       },
     ])
@@ -61,6 +64,7 @@ export function useCardInteractionRules(): UseCardInteractionRulesResult {
     triggerCardName: rule.triggerCardName,
     description: rule.description,
     condition: rule.condition,
+    kind: rule.kind,
   }))
 
   return { rules, runtimeRules, addRule, removeRule }

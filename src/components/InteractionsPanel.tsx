@@ -1,93 +1,65 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { useCardInteractions } from '../hooks/useCardInteractions'
 import { useCardInteractionRules } from '../hooks/useCardInteractionRules'
-import { CARD_INTERACTION_RULES, type CardCondition, type HpOperator } from '../lib/cardInteractions'
-import { CardDetailCard } from './CardDetailCard'
+import { CARD_INTERACTION_RULES, describeCondition, type CardInteractionResult } from '../lib/cardInteractions'
+import { computeCardFocus, computeDeckSynergy, defaultFocusName, type Finding } from '../lib/synergy'
+import { InteractionRulesSection } from './InteractionRulesSection'
+import { SynergyDeckList } from './SynergyDeckList'
+import { SynergyFocusPanel } from './SynergyFocusPanel'
 import { UnifiedInteractionGraph } from './UnifiedInteractionGraph'
-import type { DeckCard, Supertype } from '../types/card'
+import type { DeckCard } from '../types/card'
 
 interface InteractionsPanelProps {
   cards: DeckCard[]
 }
 
-const SUPERTYPE_OPTIONS: { value: Supertype | ''; label: string }[] = [
-  { value: '', label: 'Any type' },
-  { value: 'Pokémon', label: 'Pokémon' },
-  { value: 'Trainer', label: 'Trainer' },
-  { value: 'Energy', label: 'Energy' },
-]
+type View = 'summary' | 'map'
 
-const HP_OPERATOR_OPTIONS: { value: HpOperator | ''; label: string }[] = [
-  { value: '', label: 'No HP condition' },
-  { value: '<=', label: '≤ (or less)' },
-  { value: '<', label: '< (less than)' },
-  { value: '=', label: '= (exactly)' },
-  { value: '>=', label: '≥ (or more)' },
-  { value: '>', label: '> (more than)' },
-]
-
-const HP_OPERATOR_SYMBOL: Record<HpOperator, string> = {
-  '<=': '≤',
-  '<': '<',
-  '=': '=',
-  '>=': '≥',
-  '>': '>',
+const VERB_BY_KIND: Record<CardInteractionResult['kind'], string> = {
+  search: 'finds',
+  recover: 'gets back',
+  other: 'works with',
+  evolution: 'evolves into',
 }
 
-/** Breaks a condition down into the same fields the custom-rule builder has, so users can see how to recreate it. */
-function queryFields(condition: CardCondition): string[] {
-  const fields: string[] = []
-  fields.push(`Type: ${condition.supertype ?? 'Any type'}`)
-  if (condition.subtype) fields.push(`Subtype: ${condition.subtype}`)
-  if (condition.namePrefix) fields.push(`Name starts with: "${condition.namePrefix}"`)
-  if (condition.hp) fields.push(`HP: ${HP_OPERATOR_SYMBOL[condition.hp.operator]} ${condition.hp.value}`)
-  if (condition.noRuleBox) fields.push('No Rule Box (excludes ex, V, VMAX, etc.)')
-  return fields
-}
-
-/** Closes a popover on an outside click or Escape, while it's open. */
-function useClosePopoverOnOutsideInteraction(isOpen: boolean, ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
-  useEffect(() => {
-    if (!isOpen) return
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose()
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isOpen, ref, onClose])
+function FindingIcon({ tone }: { tone: Finding['tone'] }) {
+  return (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className="synergy-finding-icon">
+      {tone === 'ok' && <path d="M20 6 9 17l-5-5" />}
+      {tone === 'warn' && (
+        <>
+          <path d="M12 3 2 21h20L12 3z" />
+          <path d="M12 10v5" />
+          <path d="M12 18h.01" />
+        </>
+      )}
+      {tone === 'info' && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6" />
+          <path d="M12 7.5h.01" />
+        </>
+      )}
+    </svg>
+  )
 }
 
 export function InteractionsPanel({ cards }: InteractionsPanelProps) {
   const { rules: customRules, runtimeRules, addRule, removeRule } = useCardInteractionRules()
   const allRules = useMemo(() => [...CARD_INTERACTION_RULES, ...runtimeRules], [runtimeRules])
   const interactions = useCardInteractions(cards, allRules)
+  const synergy = useMemo(() => computeDeckSynergy(cards, interactions), [cards, interactions])
+
   const conditionById = useMemo(() => new Map(allRules.map((rule) => [rule.id, rule.condition])), [allRules])
-
-  const deckCardNames = useMemo(
-    () => Array.from(new Set(cards.map((dc) => dc.card.name))).sort((a, b) => a.localeCompare(b)),
-    [cards],
-  )
-
-  const cardByName = useMemo(() => {
-    const map = new Map<string, DeckCard['card']>()
-    for (const { card } of cards) {
-      if (!map.has(card.name)) map.set(card.name, card)
-    }
+  const countByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const { card, count } of cards) map.set(card.name, (map.get(card.name) ?? 0) + count)
     return map
   }, [cards])
+  const deckCardNames = useMemo(() => Array.from(countByName.keys()).sort((a, b) => a.localeCompare(b)), [countByName])
 
-  const [selectedCardName, setSelectedCardName] = useState<string | null>(null)
-  const selectedCard = selectedCardName ? (cardByName.get(selectedCardName) ?? null) : null
-
+  const [view, setView] = useState<View>('summary')
+  const [showGenericOnMap, setShowGenericOnMap] = useState(false)
   const [disabledInteractionIds, setDisabledInteractionIds] = useState<Set<string>>(new Set())
   const toggleInteraction = (id: string) => {
     setDisabledInteractionIds((prev) => {
@@ -97,56 +69,30 @@ export function InteractionsPanel({ cards }: InteractionsPanelProps) {
       return next
     })
   }
-  const visibleInteractions = useMemo(
-    () => interactions.filter((interaction) => !disabledInteractionIds.has(interaction.id)),
-    [interactions, disabledInteractionIds],
+
+  // Keep the user's pick while it's in the deck; otherwise focus the best-connected card.
+  const [selectedName, setSelectedName] = useState<string | null>(null)
+  const focusName = selectedName && countByName.has(selectedName) ? selectedName : defaultFocusName(synergy, cards)
+  // On narrow screens the deck list sits below the focus panel, so bring the panel into view.
+  const selectFromDeckList = (name: string) => {
+    setSelectedName(name)
+    if (window.matchMedia('(max-width: 899px)').matches) {
+      document.getElementById('synergy-focus-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+  const focus = useMemo(
+    () => (focusName ? computeCardFocus(focusName, cards, interactions, synergy) : null),
+    [focusName, cards, interactions, synergy],
   )
 
-  const [expandedInteractionId, setExpandedInteractionId] = useState<string | null>(null)
-
-  const [isNewInteractionOpen, setNewInteractionOpen] = useState(false)
-  const newInteractionRef = useRef<HTMLDivElement | null>(null)
-  useClosePopoverOnOutsideInteraction(isNewInteractionOpen, newInteractionRef, () => setNewInteractionOpen(false))
-
-  const [triggerCardName, setTriggerCardName] = useState('')
-  const [supertype, setSupertype] = useState<Supertype | ''>('')
-  const [subtype, setSubtype] = useState('')
-  const [namePrefix, setNamePrefix] = useState('')
-  const [noRuleBox, setNoRuleBox] = useState(false)
-  const [hpOperator, setHpOperator] = useState<HpOperator | ''>('')
-  const [hpValue, setHpValue] = useState('')
-  const [description, setDescription] = useState('')
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (!triggerCardName.trim()) return
-
-    const parsedHpValue = Number(hpValue)
-    addRule({
-      triggerCardName: triggerCardName.trim(),
-      description,
-      condition: {
-        supertype: supertype || undefined,
-        subtype: subtype.trim() || undefined,
-        namePrefix: namePrefix.trim() || undefined,
-        noRuleBox: noRuleBox || undefined,
-        hp:
-          hpOperator && hpValue.trim() && !Number.isNaN(parsedHpValue)
-            ? { operator: hpOperator, value: parsedHpValue }
-            : undefined,
-      },
-    })
-
-    setTriggerCardName('')
-    setSupertype('')
-    setSubtype('')
-    setNamePrefix('')
-    setNoRuleBox(false)
-    setHpOperator('')
-    setHpValue('')
-    setDescription('')
-    setNewInteractionOpen(false)
-  }
+  const mapInteractions = useMemo(
+    () =>
+      interactions.filter(
+        (interaction) =>
+          !disabledInteractionIds.has(interaction.id) && (showGenericOnMap || !synergy.genericIds.has(interaction.id)),
+      ),
+    [interactions, disabledInteractionIds, showGenericOnMap, synergy],
+  )
 
   if (cards.length === 0) {
     return (
@@ -157,200 +103,159 @@ export function InteractionsPanel({ cards }: InteractionsPanelProps) {
     )
   }
 
+  const chip = (name: string, strong = false) => (
+    <button
+      key={name}
+      type="button"
+      className={`synergy-chip${strong ? ' synergy-chip-strong' : ''}${name === focusName ? ' synergy-chip-selected' : ''}`}
+      aria-pressed={name === focusName}
+      onClick={() => setSelectedName(name)}
+    >
+      {name} ×{countByName.get(name) ?? 0}
+    </button>
+  )
+
+  const workingSpecific = synergy.specific.filter((interaction) => interaction.matchingCards.length > 0)
+
   return (
     <section className="interactions-panel viz-root">
       <h2>Interactions</h2>
 
-      <div className="interactions-graph-row">
-        <UnifiedInteractionGraph interactions={visibleInteractions} cards={cards} onCardClick={setSelectedCardName} />
-        {selectedCard && (
-          <CardDetailCard
-            card={selectedCard}
-            interactions={interactions}
-            disabledInteractionIds={disabledInteractionIds}
-            onToggleInteraction={toggleInteraction}
-            onClose={() => setSelectedCardName(null)}
-          />
-        )}
-      </div>
+      <div className="synergy-layout">
+        <SynergyDeckList cards={cards} synergy={synergy} selectedName={focusName} onSelect={selectFromDeckList} />
 
-      {interactions.length === 0 ? (
-        <p className="status-text">No card interactions apply to your deck yet.</p>
-      ) : (
-        <div className="breakdown-section">
-          <h4>Interactions</h4>
-          <p className="status-text">Uncheck one to hide it from the graph. Click one to see what it matches.</p>
-          <ul className="custom-rule-list">
-            {interactions.map((interaction) => {
-              const isExpanded = expandedInteractionId === interaction.id
-              const condition = conditionById.get(interaction.id)
-              return (
-                <li key={interaction.id} className="custom-rule-row interaction-row">
+        <div className="synergy-main">
+          <section className="synergy-box" aria-labelledby="synergy-summary-heading">
+            <div className="synergy-box-header">
+              <h3 id="synergy-summary-heading">What stands out</h3>
+              <div className="synergy-view-toggle" role="group" aria-label="View">
+                <button type="button" aria-pressed={view === 'summary'} onClick={() => setView('summary')}>
+                  Summary
+                </button>
+                <button type="button" aria-pressed={view === 'map'} onClick={() => setView('map')}>
+                  Map
+                </button>
+              </div>
+            </div>
+            {synergy.findings.length === 0 ? (
+              <p className="status-text">No synergies or problems found yet.</p>
+            ) : (
+              <ul className="synergy-findings">
+                {synergy.findings.map((finding) => (
+                  <li key={finding.id} className={`synergy-finding synergy-finding-${finding.tone}`}>
+                    <FindingIcon tone={finding.tone} />
+                    <span>
+                      <strong>{finding.title}</strong> {finding.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {view === 'summary' ? (
+            <section className="synergy-box" aria-labelledby="synergy-list-heading">
+              <h3 id="synergy-list-heading">Synergies</h3>
+              <p className="status-text synergy-hint">
+                Cards that work with specific parts of your deck. Select any card to focus on it.
+              </p>
+
+              {workingSpecific.length === 0 && synergy.evolutionLines.length === 0 ? (
+                <p className="status-text">No specific synergies in your deck yet.</p>
+              ) : (
+                <ul className="synergy-list">
+                  {synergy.evolutionLines.map((line) => (
+                    <li key={`line-${line.basic}`} className="synergy-item">
+                      <div className="synergy-item-row">
+                        <span className="synergy-item-label">Evolution line</span>
+                        {line.stages.map((stage, index) => (
+                          <span key={index} className="synergy-stage">
+                            {index > 0 && (
+                              <span aria-hidden="true" className="synergy-arrow">
+                                →
+                              </span>
+                            )}
+                            {stage.map((entry) => chip(entry.name))}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="synergy-item-note">
+                        {line.stages.map((stage) => stage.reduce((sum, entry) => sum + entry.count, 0)).join('-')} line
+                      </p>
+                    </li>
+                  ))}
+                  {workingSpecific.map((interaction) => {
+                    const condition = conditionById.get(interaction.id)
+                    return (
+                      <li key={interaction.id} className="synergy-item">
+                        <div className="synergy-item-row">
+                          {chip(interaction.triggerCardName, true)}
+                          <span className="synergy-verb">{VERB_BY_KIND[interaction.kind]}</span>
+                          {interaction.matchingCards.map((match) => chip(match.name))}
+                        </div>
+                        <p className="synergy-item-note">
+                          {condition ? `${describeCondition(condition)} · ` : ''}
+                          {interaction.totalMatchingCount} {interaction.totalMatchingCount === 1 ? 'card' : 'cards'} in
+                          your deck
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+
+              {synergy.generic.length > 0 && (
+                <details className="synergy-disclosure synergy-generic">
+                  <summary>
+                    <span className="synergy-disclosure-title">Generic search</span>
+                    <span className="status-text">
+                      {synergy.generic.length} {synergy.generic.length === 1 ? 'card reaches' : 'cards reach'} most of
+                      your deck, hidden from the map
+                    </span>
+                  </summary>
+                  <ul>
+                    {synergy.generic.map(({ interaction, reachLabel }) => (
+                      <li key={interaction.id}>
+                        <strong>
+                          {interaction.triggerCardName} ×{countByName.get(interaction.triggerCardName) ?? 0}
+                        </strong>{' '}
+                        {VERB_BY_KIND[interaction.kind]} {reachLabel}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </section>
+          ) : (
+            <section className="synergy-box" aria-label="Interaction map">
+              <UnifiedInteractionGraph interactions={mapInteractions} cards={cards} onCardClick={setSelectedName} />
+              {synergy.generic.length > 0 && (
+                <label className="custom-rule-form-checkbox synergy-map-option">
                   <input
                     type="checkbox"
-                    checked={!disabledInteractionIds.has(interaction.id)}
-                    onChange={() => toggleInteraction(interaction.id)}
-                    aria-label={`Show ${interaction.triggerCardName} on the graph`}
+                    checked={showGenericOnMap}
+                    onChange={(e) => setShowGenericOnMap(e.target.checked)}
                   />
-                  <button
-                    type="button"
-                    className="interaction-query-trigger"
-                    aria-expanded={isExpanded}
-                    onClick={() => setExpandedInteractionId(isExpanded ? null : interaction.id)}
-                  >
-                    <strong>{interaction.triggerCardName}</strong> — {interaction.description}
-                  </button>
+                  Show generic search ({synergy.generic.map((entry) => entry.interaction.triggerCardName).join(', ')})
+                </label>
+              )}
+            </section>
+          )}
 
-                  {isExpanded && (
-                    <div className="interaction-query-results">
-                      {condition ? (
-                        <>
-                          <p className="interaction-query-label">
-                            Same as building this on "New interaction" below:
-                          </p>
-                          <ul className="interaction-query-fields">
-                            {queryFields(condition).map((field) => (
-                              <li key={field}>{field}</li>
-                            ))}
-                          </ul>
-                        </>
-                      ) : (
-                        <p className="status-text">Not something the builder below can create (evolution is structural).</p>
-                      )}
-
-                      {interaction.matchingCards.length === 0 ? (
-                        <p className="status-text">No cards in your deck match this interaction.</p>
-                      ) : (
-                        <>
-                          <p className="interaction-query-label">Currently matches:</p>
-                          <ul>
-                            {interaction.matchingCards.map((match) => (
-                              <li key={match.name}>
-                                {match.name} × {match.count}
-                              </li>
-                            ))}
-                          </ul>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+          <InteractionRulesSection
+            interactions={interactions}
+            conditionById={conditionById}
+            genericIds={synergy.genericIds}
+            disabledInteractionIds={disabledInteractionIds}
+            onToggleInteraction={toggleInteraction}
+            deckCardNames={deckCardNames}
+            customRules={customRules}
+            onAddRule={addRule}
+            onRemoveRule={removeRule}
+          />
         </div>
-      )}
 
-      {customRules.length > 0 && (
-        <div className="breakdown-section">
-          <h4>Your custom rules</h4>
-          <ul className="custom-rule-list">
-            {customRules.map((rule) => (
-              <li key={rule.id} className="custom-rule-row">
-                <span>
-                  <strong>{rule.triggerCardName}</strong> — {rule.description}
-                </span>
-                <button type="button" onClick={() => removeRule(rule.id)}>
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="interaction-toggle-popover-wrap" ref={newInteractionRef}>
-        <button
-          type="button"
-          className="interaction-toggle-trigger"
-          aria-expanded={isNewInteractionOpen}
-          onClick={() => setNewInteractionOpen((open) => !open)}
-        >
-          New interaction
-        </button>
-
-        {isNewInteractionOpen && (
-          <div className="interaction-toggle-popover">
-            <h4>Add a custom interaction</h4>
-            <form className="custom-rule-form" onSubmit={handleSubmit}>
-              <select
-                value={triggerCardName}
-                onChange={(e) => setTriggerCardName(e.target.value)}
-                aria-label="Trigger card"
-                required
-              >
-                <option value="">Select a card in your deck…</option>
-                {deckCardNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-              <div className="custom-rule-form-row">
-                <select
-                  value={supertype}
-                  onChange={(e) => setSupertype(e.target.value as Supertype | '')}
-                  aria-label="Target card type"
-                >
-                  {SUPERTYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Subtype (e.g. Basic)"
-                  value={subtype}
-                  onChange={(e) => setSubtype(e.target.value)}
-                  aria-label="Target subtype"
-                />
-              </div>
-              <input
-                type="text"
-                placeholder={`Name starts with (e.g. "N's")`}
-                value={namePrefix}
-                onChange={(e) => setNamePrefix(e.target.value)}
-                aria-label="Target name starts with"
-              />
-              <label className="custom-rule-form-checkbox">
-                <input type="checkbox" checked={noRuleBox} onChange={(e) => setNoRuleBox(e.target.checked)} />
-                No Rule Box (excludes ex, V, VMAX, etc.)
-              </label>
-              <div className="custom-rule-form-row">
-                <select
-                  value={hpOperator}
-                  onChange={(e) => setHpOperator(e.target.value as HpOperator | '')}
-                  aria-label="HP comparison"
-                >
-                  {HP_OPERATOR_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  placeholder="HP value"
-                  value={hpValue}
-                  onChange={(e) => setHpValue(e.target.value)}
-                  disabled={!hpOperator}
-                  aria-label="HP value"
-                />
-              </div>
-              <input
-                type="text"
-                placeholder="Description (optional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                aria-label="Rule description"
-              />
-              <button type="submit" disabled={!triggerCardName.trim()}>
-                Add interaction
-              </button>
-            </form>
-          </div>
-        )}
+        {focus && <SynergyFocusPanel focus={focus} onSelect={setSelectedName} />}
       </div>
     </section>
   )

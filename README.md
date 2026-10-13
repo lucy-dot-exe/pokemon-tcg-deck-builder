@@ -24,9 +24,13 @@ https://projects.lucina.dev/pokemon-tcg-deck-builder/api)
 - **Statistics** — deck composition breakdown plus opening-hand math:
   mulligan chance, odds of drawing one or more basic Pokémon, and the
   chance to open each specific basic.
-- **Interactions** — a force-directed graph of card-to-card synergies
-  (search/tutor effects, evolution lines) built from a set of built-in
-  rules, plus a rule builder for defining your own.
+- **Interactions** — a summary of your deck's synergies and problems
+  (evolution lines, search targets, cards nothing reaches, triggers with
+  nothing to find). Broad cards like Ultra Ball are grouped as generic
+  search instead of linked to everything. Select a card to see what finds
+  it, what it works with, and its odds of being found by your second turn.
+  A map view shows the same links as a force-directed graph, and a rule
+  builder lets you define your own interactions.
 - **Review** — a legality checklist (deck size, Standard regulation,
   at least one basic Pokémon) and a full list breakdown for a final pass
   before you take a deck to a table.

@@ -15,12 +15,25 @@ export interface CardCondition {
 /** Subtypes that put a Rule Box on a Pokémon card (see e.g. Poké Pad's own reminder text). */
 const RULE_BOX_SUBTYPES = ['ex', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'BREAK', 'Prime', 'LEGEND', 'Star', 'Radiant', 'Tag Team']
 
+/**
+ * How a trigger card relates to the cards it matches. `search` takes them
+ * from the deck (so a copy of the trigger is another way to find them — an
+ * "out"), `recover` takes them from the discard pile, and `other` covers
+ * everything else (effects that only apply once both are in play).
+ */
+export type RuleKind = 'search' | 'recover' | 'other'
+
+/** A rule's kind, plus `evolution` for the structural evolution-line interactions. */
+export type InteractionKind = RuleKind | 'evolution'
+
 export interface CardInteractionRule {
   id: string
   triggerCardName: string
   description: string
   /** The query a target card must satisfy — the same shape the custom-rule builder produces. */
   condition: CardCondition
+  /** Defaults to `other` (custom rules made before kinds existed have none). */
+  kind?: RuleKind
 }
 
 function evaluateHp(cardHp: string | undefined, operator: HpOperator, value: number): boolean {
@@ -99,42 +112,49 @@ export function describeCondition(condition: CardCondition): string {
 export const CARD_INTERACTION_RULES: CardInteractionRule[] = [
   {
     id: 'buddy-buddy-poffin',
+    kind: 'search',
     triggerCardName: 'Buddy-Buddy Poffin',
     description: 'Search your deck for up to 2 Basic Pokémon with 70 HP or less and put them onto your Bench.',
     condition: { supertype: 'Pokémon', subtype: 'Basic', hp: { operator: '<=', value: 70 } },
   },
   {
     id: 'cyrano',
+    kind: 'search',
     triggerCardName: 'Cyrano',
     description: 'Search your deck for up to 3 Pokémon ex, reveal them, and put them into your hand.',
     condition: { supertype: 'Pokémon', subtype: 'ex' },
   },
   {
     id: 'meowth-ex',
+    kind: 'search',
     triggerCardName: 'Meowth ex',
     description: 'Last-Ditch Catch: Search your deck for a Supporter card, reveal it, and put it into your hand.',
     condition: { supertype: 'Trainer', subtype: 'Supporter' },
   },
   {
     id: 'ns-castle',
+    kind: 'other',
     triggerCardName: "N's Castle",
     description: "N's Pokémon in play (both yours and your opponent's) have no Retreat Cost.",
     condition: { supertype: 'Pokémon', namePrefix: "N's" },
   },
   {
     id: 'ns-zoroark-ex',
+    kind: 'other',
     triggerCardName: "N's Zoroark ex",
     description: "Night Joker: Choose 1 of your Benched N's Pokémon's attacks and use it as this attack.",
     condition: { supertype: 'Pokémon', namePrefix: "N's" },
   },
   {
     id: 'ns-pp-up',
+    kind: 'other',
     triggerCardName: "N's PP Up",
     description: "Attach a Basic Energy card from your discard pile to 1 of your Benched N's Pokémon.",
     condition: { supertype: 'Pokémon', namePrefix: "N's" },
   },
   {
     id: 'ultra-ball',
+    kind: 'search',
     triggerCardName: 'Ultra Ball',
     description:
       'You can use this card only if you discard 2 other cards from your hand. Search your deck for a Pokémon, reveal it, and put it into your hand.',
@@ -142,25 +162,37 @@ export const CARD_INTERACTION_RULES: CardInteractionRule[] = [
   },
   {
     id: 'night-stretcher',
+    kind: 'recover',
     triggerCardName: 'Night Stretcher',
     description: 'Put a Pokémon or a Basic Energy card from your discard pile into your hand.',
     condition: { supertype: 'Pokémon' },
   },
   {
     id: 'poke-pad',
+    kind: 'search',
     triggerCardName: 'Poké Pad',
     description: "Search your deck for a Pokémon that doesn't have a Rule Box, reveal it, and put it into your hand.",
     condition: { supertype: 'Pokémon', noRuleBox: true },
   },
   {
     id: 'secret-box',
+    kind: 'search',
     triggerCardName: 'Secret Box',
     description:
       'You can use this card only if you discard 3 other cards from your hand. Search your deck for an Item card, a Pokémon Tool card, a Supporter card, and a Stadium card, and put them into your hand.',
     condition: { supertype: 'Trainer' },
   },
   {
+    id: 'rare-candy',
+    kind: 'other',
+    triggerCardName: 'Rare Candy',
+    description:
+      'Choose 1 of your Basic Pokémon in play. If you have a Stage 2 card in your hand that evolves from that Pokémon, put that card onto the Basic Pokémon to evolve it, skipping the Stage 1.',
+    condition: { supertype: 'Pokémon', subtype: 'Stage 2' },
+  },
+  {
     id: 'pecharunt-ex',
+    kind: 'other',
     triggerCardName: 'Pecharunt ex',
     description:
       "Subjugating Chains poisons your new Active Pokémon when switching in — Binding Mochi turns that into 40 more damage on that Pokémon's attacks.",
@@ -175,6 +207,7 @@ export interface MatchingCard {
 
 export interface CardInteractionResult {
   id: string
+  kind: InteractionKind
   triggerCardName: string
   description: string
   matchingCards: MatchingCard[]
@@ -203,6 +236,7 @@ export function computeCardInteractions(cards: DeckCard[], rules: CardInteractio
 
     results.push({
       id: rule.id,
+      kind: rule.kind ?? 'other',
       triggerCardName: rule.triggerCardName,
       description: rule.description,
       matchingCards,
@@ -260,6 +294,7 @@ export function computeEvolutionInteractions(cards: DeckCard[]): CardInteraction
 
     results.push({
       id: `evolution-${basicName}`,
+      kind: 'evolution',
       triggerCardName: basicName,
       description: `${basicName}'s evolution line already in your deck.`,
       matchingCards,
