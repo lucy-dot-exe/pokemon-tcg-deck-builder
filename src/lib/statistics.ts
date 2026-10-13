@@ -1,7 +1,10 @@
 import type { DeckCard } from '../types/card'
-import { isBasicPokemon } from './cards'
+import { isBasicEnergy, isBasicPokemon } from './cards'
 
 const OPENING_HAND_SIZE = 7
+const PRIZE_COUNT = 6
+/** Cards with more copies than this are rarely all prized, so they're left out of the prize-risk list. */
+const PRIZE_RISK_MAX_COPIES = 2
 
 /** n-choose-k via an iterative product, kept numerically stable for deck-sized inputs. */
 export function nCr(n: number, k: number): number {
@@ -41,6 +44,13 @@ export interface BasicFetchChance {
   chance: number
 }
 
+export interface PrizeRisk {
+  name: string
+  count: number
+  /** P(every copy is among the Prize cards). */
+  chance: number
+}
+
 export interface OpeningHandStats {
   deckSize: number
   handSize: number
@@ -49,6 +59,7 @@ export interface OpeningHandStats {
   exactlyOneBasicChance: number
   twoOrMoreBasicsChance: number
   basicFetchChances: BasicFetchChance[]
+  prizeRisks: PrizeRisk[]
 }
 
 export function computeOpeningHandStats(cards: DeckCard[]): OpeningHandStats {
@@ -83,6 +94,22 @@ export function computeOpeningHandStats(cards: DeckCard[]): OpeningHandStats {
     }))
     .sort((a, b) => b.chance - a.chance)
 
+  const countsByName = new Map<string, number>()
+  for (const dc of cards) {
+    if (isBasicEnergy(dc.card)) continue
+    countsByName.set(dc.card.name, (countsByName.get(dc.card.name) ?? 0) + dc.count)
+  }
+
+  // All k copies prized = choosing all k among the 6 prizes: C(6, k) / C(deckSize, k).
+  const prizeRisks: PrizeRisk[] = Array.from(countsByName.entries())
+    .filter(([, count]) => count <= PRIZE_RISK_MAX_COPIES)
+    .map(([name, count]) => ({
+      name,
+      count,
+      chance: deckSize >= PRIZE_COUNT ? nCr(PRIZE_COUNT, count) / nCr(deckSize, count) : 0,
+    }))
+    .sort((a, b) => b.chance - a.chance || a.name.localeCompare(b.name))
+
   return {
     deckSize,
     handSize,
@@ -91,5 +118,6 @@ export function computeOpeningHandStats(cards: DeckCard[]): OpeningHandStats {
     exactlyOneBasicChance,
     twoOrMoreBasicsChance,
     basicFetchChances,
+    prizeRisks,
   }
 }

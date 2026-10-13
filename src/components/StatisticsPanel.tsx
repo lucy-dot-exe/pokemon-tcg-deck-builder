@@ -71,6 +71,27 @@ export function StatisticsPanel({ cards }: StatisticsPanelProps) {
           ))}
         </ul>
       )}
+
+      <h3>Prize risk</h3>
+      {stats.prizeRisks.length === 0 ? (
+        <p className="status-text">Every card has 3 or more copies, so none is likely to be fully prized.</p>
+      ) : (
+        <>
+          <p className="status-text">Chance that every copy of a 1- or 2-of ends up in your 6 Prize cards.</p>
+          <ul className="prize-risk-list">
+            {stats.prizeRisks.map((risk) => (
+              <li key={risk.name} className="prize-risk-row">
+                <span className="prize-risk-name">
+                  {risk.name} <span className="fetch-chance-count">×{risk.count}</span>
+                </span>
+                <span className={risk.chance >= 0.05 ? 'prize-risk-value prize-risk-value-high' : 'prize-risk-value'}>
+                  {formatPercent(risk.chance)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   )
 }

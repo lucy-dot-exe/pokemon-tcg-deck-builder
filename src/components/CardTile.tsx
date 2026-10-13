@@ -4,30 +4,45 @@ interface CardTileProps {
   card: Card
   count?: number
   onAdd?: (card: Card) => void
-  onRemove?: (card: Card) => void
+  /** When false the add button is disabled (e.g. the 4-copy limit is reached). */
+  canAdd?: boolean
 }
 
-export function CardTile({ card, count = 0, onAdd, onRemove }: CardTileProps) {
+function setCode(card: Card): string {
+  return `${card.set.ptcgoCode ?? card.set.name} ${card.number}`
+}
+
+export function CardTile({ card, count = 0, onAdd, canAdd = true }: CardTileProps) {
   return (
-    <div className="card-tile">
-      <img src={card.images.small} alt={card.name} loading="lazy" />
-      <div className="card-tile-info">
-        <span className="card-tile-name">{card.name}</span>
-        <span className="card-tile-set">{card.set.name}</span>
-      </div>
-      <div className="card-tile-actions">
-        {onRemove && (
-          <button type="button" onClick={() => onRemove(card)} aria-label={`Remove ${card.name}`}>
-            −
-          </button>
+    <article className="card-tile">
+      <div className="card-tile-image">
+        <img src={card.images.small} alt={card.name} loading="lazy" />
+        {count > 0 && (
+          <span className="card-tile-count" aria-label={`${count} in deck`}>
+            ×{count}
+          </span>
         )}
-        {count > 0 && <span className="card-tile-count">{count}</span>}
+      </div>
+      <div className="card-tile-footer">
+        <div className="card-tile-info">
+          <span className="card-tile-name">{card.name}</span>
+          <span className="card-tile-set">{setCode(card)}</span>
+        </div>
         {onAdd && (
-          <button type="button" onClick={() => onAdd(card)} aria-label={`Add ${card.name}`}>
-            +
+          <button
+            type="button"
+            className="icon-button icon-button-solid"
+            onClick={() => onAdd(card)}
+            disabled={!canAdd}
+            aria-label={canAdd ? `Add ${card.name} to deck` : `${card.name}: copy limit reached`}
+            title={canAdd ? undefined : 'Copy limit reached'}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
           </button>
         )}
       </div>
-    </div>
+    </article>
   )
 }
